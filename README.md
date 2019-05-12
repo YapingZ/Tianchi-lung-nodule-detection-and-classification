@@ -10,7 +10,7 @@ detection：介绍了一些检测算法的论文和代码；
 segmentation：介绍了一些分割算法的论文和代码；
 
 现在主要介绍一下MyCode中的使用。
-# 首先介绍一下使用的环境：
+# 使用的环境：
 Keras 2.1.5+
 
 TensorFlow 1.4.0+
