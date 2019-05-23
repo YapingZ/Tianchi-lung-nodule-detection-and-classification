@@ -1,215 +1,130 @@
-{
- "cells": [
-  {
-   "cell_type": "code",
-   "execution_count": 1,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "/home/leonard/anaconda2/lib/python2.7/site-packages/h5py/__init__.py:36: FutureWarning: Conversion of the second argument of issubdtype from `float` to `np.floating` is deprecated. In future, it will be treated as `np.float64 == np.dtype(float).type`.\n",
-      "  from ._conv import register_converters as _register_converters\n",
-      "Using TensorFlow backend.\n"
-     ]
-    }
-   ],
-   "source": [
-    "from utils.imports import *"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
-    "## Train"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 2,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "src = PATH['model_train_pred']\n",
-    "model_paths = PATH['model_final']\n",
-    "model_fenge_path=model_paths + 'final_fenge_Resnet.h5'\n",
-    "model = load_model(model_fenge_path, custom_objects={'dice_coef_loss': dice_coef_loss, 'dice_coef': dice_coef})\n",
-    "#anno = pd.read_csv(csv_path + 'annotations.csv')"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
-    "## 生成分割结果npy+csv"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 3,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "patients = [x for x in os.listdir(src) if 'orig' in x]"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 4,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "100%|██████████| 800/800 [20:23:31<00:00, 91.76s/it]   \n"
-     ]
-    }
-   ],
-   "source": [
-    "for patient in tqdm(sorted(patients)):\n",
-    "    pred_samples(src,patient,model)"
-   ]
-  },
-  {
-   "cell_type": "markdown",
-   "metadata": {},
-   "source": [
-    "## 获取分割结果csv"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 5,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "patients = [x for x in os.listdir(src) if 'pred.npy' in x]    "
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 6,
-   "metadata": {},
-   "outputs": [
-    {
-     "name": "stderr",
-     "output_type": "stream",
-     "text": [
-      "100%|██████████| 800/800 [3:41:46<00:00, 16.63s/it]  \n"
-     ]
-    }
-   ],
-   "source": [
-    "empty0 = pandas.DataFrame({'seriesuid':[],'coordX':[],'coordY':[],'coordZ':[],'diameter_mm':[]})\n",
-    "empty1 = pandas.DataFrame({'seriesuid':[],'coordX':[],'coordY':[],'coordZ':[],'diameter_mm':[]})\n",
-    "empty2 = pandas.DataFrame({'seriesuid':[],'coordX':[],'coordY':[],'coordZ':[],'diameter_mm':[]})\n",
-    "\n",
-    "for img_file in tqdm(sorted(patients)):\n",
-    "    patient_id = img_file[:-9]\n",
-    "    img_array = np.load(src + img_file)\n",
-    "    #img_array[img_array < 0.5] = 0\n",
-    "    pos_annos = pd.read_csv(src + img_file[:-9] + '_annos_pos.csv')\n",
-    "    origin = np.array([pos_annos.loc[0]['origin_x'],pos_annos.loc[0]['origin_y'],pos_annos.loc[0]['origin_z']]) \n",
-    "    spacing = np.array([pos_annos.loc[0]['spacing_x'],pos_annos.loc[0]['spacing_y'],pos_annos.loc[0]['spacing_z']])     \n",
-    "    temp = np.squeeze(img_array)\n",
-    "    \n",
-    "\n",
-    "    labels0 = skimage.measure.label(np.squeeze(temp))    \n",
-    "    props0 = skimage.measure.regionprops(labels0)\n",
-    "    for i in range(len(props0)):     \n",
-    "        if props0[i]['EquivDiameter'] > 3:\n",
-    "            world_coordinates0 = voxel_2_world([props0[i]['Centroid'][2], \n",
-    "                                                props0[i]['Centroid'][1], \n",
-    "                                                props0[i]['Centroid'][0]], origin, spacing)\n",
-    "            insertrow0 = pd.DataFrame([[patient_id,\n",
-    "                                      world_coordinates0[0],\n",
-    "                                      world_coordinates0[1],\n",
-    "                                      world_coordinates0[2],\n",
-    "                                      props0[i]['EquivDiameter']]],columns = ['seriesuid','coordX','coordY','coordZ','diameter_mm'])\n",
-    "        \n",
-    "            empty0 = empty0.append(insertrow0,ignore_index=True)\n",
-    "    \n",
-    "    temp1 = skimage.morphology.opening(np.squeeze(temp), np.ones([3,3,3]))\n",
-    "    labels1 = skimage.measure.label(np.squeeze(temp1))    \n",
-    "    props1 = skimage.measure.regionprops(labels1)\n",
-    "    \n",
-    "    for i in range(len(props1)):     \n",
-    "        if props1[i]['EquivDiameter'] > 3:\n",
-    "            world_coordinates1 = voxel_2_world([props1[i]['Centroid'][2], \n",
-    "                                                props1[i]['Centroid'][1], \n",
-    "                                                props1[i]['Centroid'][0]], origin, spacing)               \n",
-    "        \n",
-    "            insertrow1 = pd.DataFrame([[patient_id,\n",
-    "                                      world_coordinates1[0],\n",
-    "                                      world_coordinates1[1],\n",
-    "                                      world_coordinates1[2],\n",
-    "                                      props1[i]['EquivDiameter']]],columns = ['seriesuid','coordX','coordY','coordZ','diameter_mm'])\n",
-    "        \n",
-    "            empty1 = empty1.append(insertrow1,ignore_index=True)\n",
-    "        \n",
-    "    temp2 = skimage.morphology.opening(np.squeeze(temp), np.ones([5,5,5]))\n",
-    "    labels2 = skimage.measure.label(np.squeeze(temp2))    \n",
-    "    props2 = skimage.measure.regionprops(labels2)\n",
-    "    for i in range(len(props2)):\n",
-    "        if props2[i]['EquivDiameter'] > 3:\n",
-    "            world_coordinates2 = voxel_2_world([props2[i]['Centroid'][2], \n",
-    "                                                props2[i]['Centroid'][1], \n",
-    "                                                props2[i]['Centroid'][0]], origin, spacing)               \n",
-    "        \n",
-    "            insertrow2 = pd.DataFrame([[patient_id,\n",
-    "                                      world_coordinates2[0],\n",
-    "                                      world_coordinates2[1],\n",
-    "                                      world_coordinates2[2],\n",
-    "                                      props2[i]['EquivDiameter']]],columns = ['seriesuid','coordX','coordY','coordZ','diameter_mm'])\n",
-    "        \n",
-    "            empty2 = empty2.append(insertrow2,ignore_index=True)\n",
-    "            \n",
-    "empty0 = empty0[['seriesuid','coordX','coordY','coordZ','diameter_mm']]\n",
-    "empty1 = empty1[['seriesuid','coordX','coordY','coordZ','diameter_mm']]\n",
-    "empty2 = empty2[['seriesuid','coordX','coordY','coordZ','diameter_mm']] "
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": 7,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "empty0.to_csv(src + \"0_resnet_final_result.csv\", index=False)\n",
-    "empty1.to_csv(src + \"1_resnet_final_result.csv\", index=False)\n",
-    "empty2.to_csv(src + \"2_resnet_final_result.csv\", index=False)"
-   ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": []
-  }
- ],
- "metadata": {
-  "kernelspec": {
-   "display_name": "Python 2",
-   "language": "python",
-   "name": "python2"
-  },
-  "language_info": {
-   "codemirror_mode": {
-    "name": "ipython",
-    "version": 2
-   },
-   "file_extension": ".py",
-   "mimetype": "text/x-python",
-   "name": "python",
-   "nbconvert_exporter": "python",
-   "pygments_lexer": "ipython2",
-   "version": "2.7.14"
-  }
- },
- "nbformat": 4,
- "nbformat_minor": 2
-}
+# coding: utf-8
+
+# In[1]:
+
+import sys
+sys.path.append('..')
+from utils.imports import *
+import tensorflow as tf
+import keras.backend.tensorflow_backend as KTF
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True  # 不全部占满显存, 按需分配
+session = tf.Session(config=config)
+
+# 设置session
+KTF.set_session(session)
+# ## Train
+
+# In[4]:
+src = PATH['model_train_pred']
+model_paths = PATH['model_final']
+model_fenge_path=model_paths + 'final_fenge_Resnet.h5'
+model = load_model(model_fenge_path, custom_objects={'dice_coef_loss': dice_coef_loss, 'dice_coef': dice_coef})
+#anno = pd.read_csv(csv_path + 'annotations.csv')
+# ## 生成分割结果npy+csv
+
+# In[5]:
+
+
+patients = [x for x in os.listdir(src) if 'orig' in x]
+
+
+# In[6]:
+
+
+for patient in tqdm(sorted(patients)):
+    pred_samples(src,patient,model)
+
+
+# ## 获取分割结果csv
+
+# In[5]:
+
+
+patients = [x for x in os.listdir(src) if 'pred.npy' in x]
+
+# In[6]:
+
+# 创建数据表用来保存结节的位置和直径
+empty0 = pandas.DataFrame({'seriesuid': [], 'coordX': [], 'coordY': [], 'coordZ': [], 'diameter_mm': []})
+empty1 = pandas.DataFrame({'seriesuid': [], 'coordX': [], 'coordY': [], 'coordZ': [], 'diameter_mm': []})
+empty2 = pandas.DataFrame({'seriesuid': [], 'coordX': [], 'coordY': [], 'coordZ': [], 'diameter_mm': []})
+
+# 遍历结节得到origin和spacing
+for img_file in tqdm(sorted(patients)):
+ patient_id = img_file[:-9]
+ img_array = np.load(src + img_file)
+ # img_array[img_array < 0.5] = 0
+ pos_annos = pd.read_csv(src + img_file[:-9] + '_annos_pos.csv')
+ origin = np.array([pos_annos.loc[0]['origin_x'], pos_annos.loc[0]['origin_y'], pos_annos.loc[0]['origin_z']])
+ spacing = np.array([pos_annos.loc[0]['spacing_x'], pos_annos.loc[0]['spacing_y'], pos_annos.loc[0]['spacing_z']])
+ temp = np.squeeze(img_array)
+
+ # 进行坐标转换，将体素坐标转为世界坐标
+ labels0 = skimage.measure.label(np.squeeze(temp))  # 实现连通区域标记
+ props0 = skimage.measure.regionprops(labels0)  # 返回所有联通区块的列表
+ for i in range(len(props0)):
+  if props0[i]['EquivDiameter'] > 3:
+   world_coordinates0 = voxel_2_world([props0[i]['Centroid'][2],
+                                       props0[i]['Centroid'][1],
+                                       props0[i]['Centroid'][0]], origin, spacing)
+   insertrow0 = pd.DataFrame([[patient_id,
+                               world_coordinates0[0],
+                               world_coordinates0[1],
+                               world_coordinates0[2],
+                               props0[i]['EquivDiameter']]],
+                             columns=['seriesuid', 'coordX', 'coordY', 'coordZ', 'diameter_mm'])
+
+   empty0 = empty0.append(insertrow0, ignore_index=True)
+
+ # 使用开运算为3后进行坐标转换
+ temp1 = skimage.morphology.opening(np.squeeze(temp), np.ones([3, 3, 3]))  # 先腐蚀在膨胀，可消除小物体
+ labels1 = skimage.measure.label(np.squeeze(temp1))
+ props1 = skimage.measure.regionprops(labels1)
+
+ for i in range(len(props1)):
+  if props1[i]['EquivDiameter'] > 3:
+   world_coordinates1 = voxel_2_world([props1[i]['Centroid'][2],
+                                       props1[i]['Centroid'][1],
+                                       props1[i]['Centroid'][0]], origin, spacing)
+
+   insertrow1 = pd.DataFrame([[patient_id,
+                               world_coordinates1[0],
+                               world_coordinates1[1],
+                               world_coordinates1[2],
+                               props1[i]['EquivDiameter']]],
+                             columns=['seriesuid', 'coordX', 'coordY', 'coordZ', 'diameter_mm'])
+
+   empty1 = empty1.append(insertrow1, ignore_index=True)
+
+ # 使用为5的开运算后，进行坐标转换
+ temp2 = skimage.morphology.opening(np.squeeze(temp), np.ones([5, 5, 5]))
+ labels2 = skimage.measure.label(np.squeeze(temp2))
+ props2 = skimage.measure.regionprops(labels2)
+ for i in range(len(props2)):
+  if props2[i]['EquivDiameter'] > 3:
+   world_coordinates2 = voxel_2_world([props2[i]['Centroid'][2],
+                                       props2[i]['Centroid'][1],
+                                       props2[i]['Centroid'][0]], origin, spacing)
+
+   insertrow2 = pd.DataFrame([[patient_id,
+                               world_coordinates2[0],
+                               world_coordinates2[1],
+                               world_coordinates2[2],
+                               props2[i]['EquivDiameter']]],
+                             columns=['seriesuid', 'coordX', 'coordY', 'coordZ', 'diameter_mm'])
+
+   empty2 = empty2.append(insertrow2, ignore_index=True)
+
+empty0 = empty0[['seriesuid', 'coordX', 'coordY', 'coordZ', 'diameter_mm']]
+empty1 = empty1[['seriesuid', 'coordX', 'coordY', 'coordZ', 'diameter_mm']]
+empty2 = empty2[['seriesuid', 'coordX', 'coordY', 'coordZ', 'diameter_mm']]
+
+# In[7]:
+
+# 生成csv文件，分别是未使用开运算的，使用参数为3的开运算，使用参数为5的开运算
+empty0.to_csv(src + "0_resnet_final_result.csv", index=False)
+empty1.to_csv(src + "1_resnet_final_result.csv", index=False)
+empty2.to_csv(src + "2_resnet_final_result.csv", index=False)
+
